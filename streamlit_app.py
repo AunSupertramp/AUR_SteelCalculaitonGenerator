@@ -1,25 +1,67 @@
 import streamlit as st
+from openpyxl import load_workbook
+import matplotlib.pyplot as plt
+from fpdf import FPDF
 import pandas as pd
+import tempfile
 
-if "data" not in st.session_state:
-    st.session_state.data = [
-        {"Row Labels": "[B3] 48.3X4 CHS", "Max of Elem Station": 2.425, "Max of P": 15.6916, "Min of P": -1.283, "Max of V2": 2.0973, "Min of V2": -5.5459, "Max of V3": 0.9721, "Min of V3": -0.7313, "Max of T": 0.056, "Min of T": -0.0423, "Max of M2": 0.5243, "Min of M2": -0.1731, "Max of M3": 0.9528, "Min of M3": -0.3229},
-    ]
+st.title("Excel Cell Updater and PDF Plot Generator")
 
-st.title('Calculation Generator from Excel Input')
+# Upload Excel file
+uploaded_file = st.file_uploader("Upload an Excel file", type=["xlsx"])
 
-st.write("# Data Table")
-data_df = pd.DataFrame(st.session_state.data)
+if uploaded_file:
+    # Load the workbook and select a sheet
+    workbook = load_workbook(uploaded_file, data_only=True)
+    sheet_names = workbook.sheetnames
+    sheet_name = st.selectbox("Select Sheet", sheet_names)
+    sheet = workbook[sheet_name]
 
-# Editable Data Table using Streamlit's built-in features
-edited_df = st.data_editor(data_df, num_rows="dynamic")
+    # Display the current data in the sheet
+    st.write("Current Sheet Data:")
+    data = sheet.values
+    df = pd.DataFrame(data)
+    st.write(df)
 
-# Submit button to update session state
-def update_data():
-    st.session_state.data = edited_df.to_dict(orient='records')
+    # Input for the cell to update
+    row = st.number_input("Row to Update", min_value=1, step=1)
+    column = st.text_input("Column to Update (e.g., A, B, C)")
 
-if st.button("Submit Changes"):
-    update_data()
+    # Input for multiple values
+    values = st.text_area("Enter Values (one per line)").splitlines()
 
-st.write("# Updated Data Table")
-st.dataframe(st.session_state.data)
+    if st.button("Generate PDFs"):
+        if column and row > 0 and values:
+            pdf_paths = []
+
+            for value in values:
+                # Update cell with the value
+                cell = f"{column}{row}"
+                sheet[cell] = value
+
+                # Generate plot
+                fig, ax = plt.subplots()
+                ax.plot([1, 2, 3], [int(value), int(value)*2, int(value)*3], marker="o")
+                ax.set_title(f"Plot for Value: {value}")
+                ax.set_xlabel("X-axis")
+                ax.set_ylabel("Y-axis")
+
+                # Save each plot to a temporary PDF file
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
+                    pdf_path = tmp_pdf.name
+                    fig.savefig(pdf_path, format="pdf")
+                    pdf_paths.append(pdf_path)
+
+                plt.close(fig)
+
+            # Download each PDF
+            for pdf_path in pdf_paths:
+                with open(pdf_path, "rb") as file:
+                    st.download_button(
+                        label=f"Download PDF for Value {pdf_path.split('/')[-1].split('.')[0]}",
+                        data=file,
+                        file_name=f"Plot_{pdf_path.split('/')[-1].split('.')[0]}.pdf",
+                        mime="application/pdf"
+                    )
+        else:
+            st.warning("Please provide a valid column, row, and values.")
